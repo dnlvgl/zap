@@ -64,4 +64,7 @@ var (
 
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(subtle)
+
+	headerStyle = lipgloss.NewStyle().
+			Foreground(subtle)
 )

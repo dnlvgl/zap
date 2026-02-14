@@ -167,20 +167,20 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateList:
 		switch msg.String() {
-		case "q", "ctrl+c", "esc":
+		case "ctrl+g", "ctrl+c", "esc":
 			m.quitting = true
 			return m, tea.Quit
-		case "up", "k":
+		case "up", "ctrl+p":
 			if m.cursor > 0 {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down", "ctrl+n":
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
 			}
 		case "enter", " ":
 			m.state = stateConfirm
-		case "r":
+		case "ctrl+r":
 			m.state = stateLoading
 			return m, loadProcesses(m.query)
 		}
@@ -192,7 +192,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = stateLoading
 			m.message = "Killing..."
 			return m, executeKill(item, m.force)
-		case "n", "N", "esc", "q":
+		case "n", "N", "esc", "ctrl+g":
 			m.state = stateList
 		case "ctrl+c":
 			m.quitting = true
@@ -201,10 +201,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case stateResult:
 		switch msg.String() {
-		case "q", "ctrl+c", "esc", "enter":
+		case "ctrl+g", "ctrl+c", "esc", "enter":
 			m.quitting = true
 			return m, tea.Quit
-		case "r":
+		case "ctrl+r":
 			m.state = stateLoading
 			m.cursor = 0
 			return m, loadProcesses(m.query)
@@ -250,13 +250,15 @@ func (m Model) viewList() string {
 	}
 	b.WriteString(titleStyle.Render(title))
 	b.WriteString("\n")
+	b.WriteString(headerStyle.Render(fmt.Sprintf("  %-14s %-10s  %s", "PORT", "PID", "COMMAND")))
+	b.WriteString("\n")
 
 	for i, item := range m.items {
 		b.WriteString(m.renderItem(i, item))
 		b.WriteString("\n")
 	}
 
-	help := "j/k navigate • enter select • r refresh • q quit"
+	help := "C-p/C-n navigate • enter select • C-r refresh • C-g quit"
 	if m.force {
 		help += " • FORCE mode"
 	}
@@ -266,18 +268,37 @@ func (m Model) viewList() string {
 	return b.String()
 }
 
+const (
+	colPortWidth = 14
+	colPIDWidth  = 10
+	// cursor (2 or 3 chars) + space + port + space + pid + 2 spaces = prefix before command
+	cmdOffset = 3 + colPortWidth + 1 + colPIDWidth + 2
+)
+
 func (m Model) renderItem(index int, item processItem) string {
 	cursor := unselectedStyle.Render(" ")
 	if index == m.cursor {
 		cursor = selectedStyle.Render("")
 	}
 
-	pid := pidStyle.Render(fmt.Sprintf("PID %d", item.context.Info.PID))
-	portStr := portStyle.Render(fmt.Sprintf(":%d/%s", item.listener.Port, item.listener.Protocol))
+	portRaw := fmt.Sprintf(":%d/%s", item.listener.Port, item.listener.Protocol)
+	pidRaw := fmt.Sprintf("PID %d", item.context.Info.PID)
 
+	// Pad plain text to fixed widths, then apply styles
+	portStr := portStyle.Render(fmt.Sprintf("%-*s", colPortWidth, portRaw))
+	pid := pidStyle.Render(fmt.Sprintf("%-*s", colPIDWidth, pidRaw))
+
+	// Truncate command to fit in terminal
+	maxCmd := 50
+	if m.width > 0 {
+		available := m.width - cmdOffset
+		if available > 0 && available < maxCmd {
+			maxCmd = available
+		}
+	}
 	cmd := item.context.Info.Command
-	if len(cmd) > 50 {
-		cmd = cmd[:47] + "..."
+	if len(cmd) > maxCmd && maxCmd > 3 {
+		cmd = cmd[:maxCmd-3] + "..."
 	}
 	cmdStr := commandStyle.Render(cmd)
 
@@ -295,7 +316,7 @@ func (m Model) renderItem(index int, item processItem) string {
 		tags = append(tags, tag)
 	}
 
-	line := fmt.Sprintf("%s %s %s  %s", cursor, pid, portStr, cmdStr)
+	line := fmt.Sprintf("%s %s %s  %s", cursor, portStr, pid, cmdStr)
 	if len(tags) > 0 {
 		line += "  " + strings.Join(tags, " ")
 	}
@@ -319,10 +340,13 @@ func (m Model) renderItem(index int, item processItem) string {
 	if len(item.context.Info.Children) > 0 {
 		details = append(details, fmt.Sprintf("children:%d", len(item.context.Info.Children)))
 	}
+	if item.context.Info.IsPrivileged() {
+		details = append(details, "needs sudo")
+	}
 
 	if len(details) > 0 {
 		detailLine := lipgloss.NewStyle().
-			PaddingLeft(5).
+			PaddingLeft(cmdOffset).
 			Foreground(subtle).
 			Render(strings.Join(details, " • "))
 		line += "\n" + detailLine
@@ -373,7 +397,7 @@ func (m Model) viewResult() string {
 		b.WriteString(successStyle.Render("  " + m.message))
 	}
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("  r retry • q/enter quit"))
+	b.WriteString(helpStyle.Render("  C-r retry • C-g/enter quit"))
 	b.WriteString("\n")
 	return b.String()
 }
