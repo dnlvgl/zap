@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dnl/zap/internal/container"
 	"github.com/dnl/zap/internal/kill"
 	"github.com/dnl/zap/internal/port"
 	"github.com/dnl/zap/internal/process"
+	"github.com/dnl/zap/internal/ui"
 )
 
 type options struct {
@@ -68,22 +69,41 @@ func main() {
 		os.Exit(0)
 	}
 
-	if len(opts.ports) == 0 {
-		listeners, err := port.DetectAll()
+	// Dry-run mode: non-interactive text output
+	if opts.dryRun {
+		runDryRun(opts)
+		return
+	}
+
+	// Interactive TUI mode
+	var query *port.Query
+	if len(opts.ports) > 0 {
+		// For now, use the first port argument for TUI
+		q, err := port.Parse(opts.ports[0])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error detecting ports: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		if len(listeners) == 0 {
-			fmt.Println("No listening ports found.")
-			os.Exit(0)
-		}
-		printListeners(listeners)
-		os.Exit(0)
+		query = &q
+	}
+
+	model := ui.New(query, opts.force)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runDryRun(opts options) {
+	queries := opts.ports
+	if len(queries) == 0 {
+		// Dry-run with no ports: show all
+		queries = []string{"1-65535"}
 	}
 
 	hasError := false
-	for _, arg := range opts.ports {
+	for _, arg := range queries {
 		q, err := port.Parse(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -102,7 +122,6 @@ func main() {
 			continue
 		}
 
-		// Deduplicate by PID (a process may listen on multiple matched ports)
 		seen := make(map[int]bool)
 		for _, l := range listeners {
 			if seen[l.PID] {
@@ -126,18 +145,9 @@ func main() {
 			desc := kill.Describe(action)
 			contextInfo := formatContext(ctx, l)
 
-			if opts.dryRun {
-				fmt.Printf("[dry-run] %s%s\n", desc, contextInfo)
-				if len(ctx.Info.Children) > 0 {
-					fmt.Printf("  child PIDs: %v\n", ctx.Info.Children)
-				}
-				continue
-			}
-
-			fmt.Printf("%s%s\n", desc, contextInfo)
-			if err := kill.Execute(action); err != nil {
-				fmt.Fprintf(os.Stderr, "  error: %v\n", err)
-				hasError = true
+			fmt.Printf("[dry-run] %s%s\n", desc, contextInfo)
+			if len(ctx.Info.Children) > 0 {
+				fmt.Printf("  child PIDs: %v\n", ctx.Info.Children)
 			}
 		}
 	}
@@ -169,51 +179,4 @@ func formatContext(ctx process.Context, l port.Listener) string {
 		parts = append(parts, fmt.Sprintf(", systemd %s", ctx.SystemdUnit))
 	}
 	return strings.Join(parts, "") + ")"
-}
-
-func printListeners(listeners []port.Listener) {
-	type portGroup struct {
-		port     int
-		protocol string
-		pids     []int
-	}
-
-	groups := make(map[string]*portGroup)
-	for _, l := range listeners {
-		key := fmt.Sprintf("%d/%s", l.Port, l.Protocol)
-		if g, ok := groups[key]; ok {
-			g.pids = append(g.pids, l.PID)
-		} else {
-			groups[key] = &portGroup{
-				port:     l.Port,
-				protocol: l.Protocol,
-				pids:     []int{l.PID},
-			}
-		}
-	}
-
-	var sorted []*portGroup
-	for _, g := range groups {
-		sorted = append(sorted, g)
-	}
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].port < sorted[j].port
-	})
-
-	for _, g := range sorted {
-		var cmds []string
-		for _, pid := range g.pids {
-			info, err := process.Gather(pid)
-			cmd := fmt.Sprintf("PID %d", pid)
-			if err == nil && info.Command != "" {
-				c := info.Command
-				if len(c) > 60 {
-					c = c[:57] + "..."
-				}
-				cmd = fmt.Sprintf("PID %d (%s)", pid, c)
-			}
-			cmds = append(cmds, cmd)
-		}
-		fmt.Printf(":%d/%s  %s\n", g.port, g.protocol, strings.Join(cmds, ", "))
-	}
 }
