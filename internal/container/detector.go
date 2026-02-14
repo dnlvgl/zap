@@ -26,11 +26,12 @@ func Detect(pid int) *Info {
 		return nil
 	}
 
-	containerID, runtime := parseCgroup(string(data))
+	containerID, runtimeHint := parseCgroup(string(data))
 	if containerID == "" {
 		return nil
 	}
 
+	runtime := detectRuntime(runtimeHint)
 	name := getContainerName(containerID, runtime)
 
 	return &Info{
@@ -53,15 +54,15 @@ func parseCgroup(content string) (containerID, runtime string) {
 	for _, line := range strings.Split(content, "\n") {
 		// Podman (libpod)
 		if m := libpodRe.FindStringSubmatch(line); len(m) > 1 {
-			return m[1], detectRuntime("podman")
+			return m[1], "podman"
 		}
 		// Docker scope style
 		if m := dockerRe.FindStringSubmatch(line); len(m) > 1 {
-			return m[1], detectRuntime("docker")
+			return m[1], "docker"
 		}
 		// Docker slash style (/docker/<id>)
 		if m := slashDockerRe.FindStringSubmatch(line); len(m) > 1 {
-			return m[1], detectRuntime("docker")
+			return m[1], "docker"
 		}
 		// LXC style
 		if m := slashLXCRe.FindStringSubmatch(line); len(m) > 1 {
