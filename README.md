@@ -1,15 +1,15 @@
 # zap
 
-Have to many dev servers or containers running, now the ports are conflicting and you have no clue where you actually started it? Always forget the syntax of 'netstat' and too lazy to pipe that into `kill`?
+Too many dev servers running and ports colliding? Can't remember the `netstat` incantation to figure out what's hogging port 3000?
 
-Then this is for you, easily check for processes by port number and kill them. Detects containers (Podman/Docker) and systemd services for proper shutdown.
+zap gives you a TUI to find processes by port and kill them — with proper handling for containers (Podman/Docker) and systemd services.
 
 ![zap screenshot](screenshots/zap-screenshot.png)
 
 ## Install
 
 ```bash
-go install github.com/dnl/zap/cmd/zap@latest
+go install github.com/dnlvgl/zap/cmd/zap@latest
 ```
 
 Or build from source:
