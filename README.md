@@ -1,6 +1,10 @@
 # zap
 
-A TUI for killing processes by port number. Detects containers (Podman/Docker) and systemd services for proper shutdown.
+Have to many dev servers or containers running, now the ports are conflicting and you have no clue where you actually started it? Always forget the syntax of 'netstat' and too lazy to pipe that into `kill`?
+
+Then this is for you, easily check for processes by port number and kill them. Detects containers (Podman/Docker) and systemd services for proper shutdown.
+
+![zap screenshot](screenshots/zap-screenshot.png)
 
 ## Install
 
@@ -36,26 +40,6 @@ zap :3000 --force
 zap :3000 --dry-run
 ```
 
-## TUI
-
-The default mode launches a fullscreen terminal interface.
-
-Each process shows:
-- PID and port/protocol
-- Command line
-- Memory usage, uptime, child process count
-- Tags for container runtime (podman/docker) and systemd unit
-
-### Key bindings
-
-| Key | Action |
-|-----|--------|
-| `j` / `k` / arrows | Navigate |
-| `enter` / `space` | Select process to kill |
-| `y` / `enter` | Confirm kill |
-| `n` / `esc` | Cancel |
-| `r` | Refresh |
-| `q` / `ctrl+c` | Quit |
 
 ## Kill strategies
 

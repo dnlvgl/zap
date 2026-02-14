@@ -2,69 +2,103 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
+// Color palette
 var (
-	subtle = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#999999"}
-	accent = lipgloss.AdaptiveColor{Light: "#7B2FBE", Dark: "#BD93F9"}
-	danger = lipgloss.AdaptiveColor{Light: "#CC0000", Dark: "#FF5555"}
-	green  = lipgloss.AdaptiveColor{Light: "#007700", Dark: "#50FA7B"}
-	yellow = lipgloss.AdaptiveColor{Light: "#886600", Dark: "#F1FA8C"}
+	colorSubtle = lipgloss.AdaptiveColor{Light: "#666666", Dark: "#999999"}
+	colorAccent = lipgloss.AdaptiveColor{Light: "#7B2FBE", Dark: "#BD93F9"}
+	colorDanger = lipgloss.AdaptiveColor{Light: "#CC0000", Dark: "#FF5555"}
+	colorGreen  = lipgloss.AdaptiveColor{Light: "#007700", Dark: "#50FA7B"}
+	colorYellow = lipgloss.AdaptiveColor{Light: "#886600", Dark: "#F1FA8C"}
+	colorCyan   = lipgloss.AdaptiveColor{Light: "#0077CC", Dark: "#8BE9FD"}
+	colorOrange = lipgloss.AdaptiveColor{Light: "#CC7700", Dark: "#FFB86C"}
+	colorMuted  = lipgloss.AdaptiveColor{Light: "#888888", Dark: "#6272A4"}
+)
 
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(accent).
-			MarginBottom(1)
+// Table styles (used inside StyleFunc callback)
+var (
+	tableHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorSubtle)
 
-	itemStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
+	tableCellStyle = lipgloss.NewStyle()
 
-	selectedStyle = lipgloss.NewStyle().
-			PaddingLeft(1).
-			Bold(true).
-			Foreground(accent).
-			SetString(">")
+	tableSelectedStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#FFFFFF"}).
+				Background(colorAccent)
+)
 
-	unselectedStyle = lipgloss.NewStyle().
-			PaddingLeft(2)
-
-	pidStyle = lipgloss.NewStyle().
-			Foreground(yellow).
-			Bold(true)
-
-	portStyle = lipgloss.NewStyle().
-			Foreground(accent)
-
-	commandStyle = lipgloss.NewStyle().
-			Foreground(subtle)
-
+// Tag styles (used in detail panel only)
+var (
 	tagContainerStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#282A36"}).
-				Background(lipgloss.AdaptiveColor{Light: "#0077CC", Dark: "#8BE9FD"}).
+				Background(colorCyan).
 				Padding(0, 1)
 
 	tagSystemdStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#282A36"}).
-			Background(lipgloss.AdaptiveColor{Light: "#CC7700", Dark: "#FFB86C"}).
+			Background(colorOrange).
 			Padding(0, 1)
 
-	confirmStyle = lipgloss.NewStyle().
+	tagSudoStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "#FFFFFF", Dark: "#282A36"}).
+			Background(colorDanger).
+			Padding(0, 1)
+)
+
+// Detail panel styles
+var (
+	detailPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorMuted).
+				Padding(0, 1)
+
+	detailLabelStyle = lipgloss.NewStyle().
+				Width(9).
+				Foreground(colorMuted)
+
+	detailValueStyle = lipgloss.NewStyle().
+				Foreground(colorSubtle)
+
+	strategyStyle = lipgloss.NewStyle().
+			Foreground(colorAccent).
+			Bold(true)
+
+	warningStyle = lipgloss.NewStyle().
+			Foreground(colorDanger)
+)
+
+// Confirm styles
+var (
+	confirmPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorDanger).
+				Padding(0, 1)
+
+	confirmPromptStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorDanger)
+
+	confirmDescStyle = lipgloss.NewStyle().
+				Foreground(colorSubtle)
+)
+
+// General styles
+var (
+	titleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(danger)
+			Foreground(colorAccent).
+			MarginBottom(1)
 
 	successStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(green)
+			Foreground(colorGreen)
 
 	errorStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(danger)
+			Foreground(colorDanger)
 
 	helpStyle = lipgloss.NewStyle().
-			Foreground(subtle).
+			Foreground(colorSubtle).
 			MarginTop(1)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(subtle)
-
-	headerStyle = lipgloss.NewStyle().
-			Foreground(subtle)
 )

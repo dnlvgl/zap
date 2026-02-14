@@ -2,11 +2,13 @@ package ui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/dnl/zap/internal/container"
 	"github.com/dnl/zap/internal/kill"
 	"github.com/dnl/zap/internal/port"
@@ -29,16 +31,16 @@ type processItem struct {
 
 // Model is the Bubble Tea model for the zap TUI.
 type Model struct {
-	state     state
-	query     *port.Query // nil means show all ports
-	items     []processItem
-	cursor    int
-	force     bool
-	message   string
-	isError   bool
-	width     int
-	height    int
-	quitting  bool
+	state    state
+	query    *port.Query // nil means show all ports
+	items    []processItem
+	cursor   int
+	force    bool
+	message  string
+	isError  bool
+	width    int
+	height   int
+	quitting bool
 }
 
 // New creates a new TUI model.
@@ -204,7 +206,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+g", "ctrl+c", "esc", "enter":
 			m.quitting = true
 			return m, tea.Quit
-		case "ctrl+r":
+		case "ctrl+b":
 			m.state = stateLoading
 			m.cursor = 0
 			return m, loadProcesses(m.query)
@@ -234,130 +236,255 @@ func (m Model) View() string {
 }
 
 func (m Model) viewLoading() string {
-	return "\n  Scanning ports...\n"
+	return lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		"  Scanning ports...",
+		"",
+	)
 }
 
 func (m Model) viewList() string {
-	var b strings.Builder
+	title := m.buildTitle()
+	tbl := m.buildTable()
+	detail := m.buildDetailPanel()
+	help := m.buildHelp()
 
-	title := "Listening processes"
+	return lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(title),
+		tbl,
+		detail,
+		help,
+		"",
+	)
+}
+
+func (m Model) viewConfirm() string {
+	title := m.buildTitle()
+	tbl := m.buildTable()
+	confirm := m.buildConfirmPrompt()
+	help := helpStyle.Render("y/enter confirm • n/esc cancel")
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		titleStyle.Render(title),
+		tbl,
+		confirm,
+		help,
+		"",
+	)
+}
+
+func (m Model) viewResult() string {
+	var msg string
+	if m.isError {
+		msg = errorStyle.Render("  " + m.message)
+	} else {
+		msg = successStyle.Render("  " + m.message)
+	}
+	help := helpStyle.Render("  C-b go back • C-g/enter quit")
+
+	return lipgloss.JoinVertical(lipgloss.Left,
+		"",
+		msg,
+		help,
+		"",
+	)
+}
+
+// buildTitle returns the title string based on query.
+func (m Model) buildTitle() string {
 	if m.query != nil {
 		if m.query.IsSinglePort() {
-			title = fmt.Sprintf("Processes on port %d", m.query.StartPort)
-		} else {
-			title = fmt.Sprintf("Processes on ports %d-%d", m.query.StartPort, m.query.EndPort)
+			return fmt.Sprintf("Processes on port %d", m.query.StartPort)
 		}
+		return fmt.Sprintf("Processes on ports %d-%d", m.query.StartPort, m.query.EndPort)
 	}
-	b.WriteString(titleStyle.Render(title))
-	b.WriteString("\n")
-	b.WriteString(headerStyle.Render(fmt.Sprintf("  %-14s %-10s  %s", "PORT", "PID", "COMMAND")))
-	b.WriteString("\n")
+	return "Listening Processes"
+}
 
-	for i, item := range m.items {
-		b.WriteString(m.renderItem(i, item))
-		b.WriteString("\n")
-	}
-
+// buildHelp returns the help line.
+func (m Model) buildHelp() string {
 	help := "C-p/C-n navigate • enter select • C-r refresh • C-g quit"
 	if m.force {
 		help += " • FORCE mode"
 	}
-	b.WriteString(helpStyle.Render(help))
-	b.WriteString("\n")
-
-	return b.String()
+	return helpStyle.Render(help)
 }
 
-const (
-	colPortWidth = 14
-	colPIDWidth  = 10
-	// cursor (2 or 3 chars) + space + port + space + pid + 2 spaces = prefix before command
-	cmdOffset = 3 + colPortWidth + 1 + colPIDWidth + 2
-)
-
-func (m Model) renderItem(index int, item processItem) string {
-	cursor := unselectedStyle.Render(" ")
-	if index == m.cursor {
-		cursor = selectedStyle.Render("")
+// buildTable constructs a lipgloss table from the process items.
+func (m Model) buildTable() string {
+	width := m.width
+	if width == 0 {
+		width = 80
 	}
 
-	portRaw := fmt.Sprintf(":%d/%s", item.listener.Port, item.listener.Protocol)
-	pidRaw := fmt.Sprintf("PID %d", item.context.Info.PID)
+	rows := make([][]string, len(m.items))
+	for i, item := range m.items {
+		rows[i] = m.buildRow(i, item, width)
+	}
 
-	// Pad plain text to fixed widths, then apply styles
-	portStr := portStyle.Render(fmt.Sprintf("%-*s", colPortWidth, portRaw))
-	pid := pidStyle.Render(fmt.Sprintf("%-*s", colPIDWidth, pidRaw))
+	t := table.New().
+		Headers("", "PORT", "PID", "COMMAND").
+		Rows(rows...).
+		Border(lipgloss.NormalBorder()).
+		BorderHeader(true).
+		BorderColumn(false).
+		BorderRow(false).
+		Width(width).
+		StyleFunc(m.tableStyleFunc)
 
-	// Truncate command to fit in terminal
-	maxCmd := 50
-	if m.width > 0 {
-		available := m.width - cmdOffset
-		if available > 0 && available < maxCmd {
-			maxCmd = available
+	return t.Render()
+}
+
+// tableStyleFunc returns the style for each cell based on row/col.
+func (m Model) tableStyleFunc(row, col int) lipgloss.Style {
+	if row == table.HeaderRow {
+		s := tableHeaderStyle
+		if col == 0 {
+			return s.Width(2)
 		}
+		return s
 	}
+
+	if row == m.cursor {
+		s := tableSelectedStyle
+		if col == 0 {
+			return s.Width(2)
+		}
+		return s
+	}
+
+	s := tableCellStyle
+	if col == 0 {
+		return s.Width(2)
+	}
+	switch col {
+	case 1: // PORT
+		return s.Foreground(colorAccent)
+	case 2: // PID
+		return s.Foreground(colorYellow)
+	case 3: // COMMAND
+		return s.Foreground(colorSubtle)
+	}
+	return s
+}
+
+// buildRow returns a row for the table.
+func (m Model) buildRow(index int, item processItem, width int) []string {
+	sel := " "
+	if index == m.cursor {
+		sel = ">"
+	}
+
+	portStr := fmt.Sprintf(":%d/%s", item.listener.Port, item.listener.Protocol)
+	pidStr := strconv.Itoa(item.context.Info.PID)
+
 	cmd := item.context.Info.Command
+	// Reserve space for selector(2) + port(~12) + pid(~8) + borders/padding(~10)
+	maxCmd := width - 32
+	if maxCmd < 20 {
+		maxCmd = 20
+	}
 	if len(cmd) > maxCmd && maxCmd > 3 {
 		cmd = cmd[:maxCmd-3] + "..."
 	}
-	cmdStr := commandStyle.Render(cmd)
 
+	return []string{sel, portStr, pidStr, cmd}
+}
+
+// buildDetailPanel renders the detail panel for the selected item.
+func (m Model) buildDetailPanel() string {
+	if m.cursor >= len(m.items) {
+		return ""
+	}
+	item := m.items[m.cursor]
+	info := item.context.Info
+
+	var lines []string
+
+	// User
+	if info.User != "" {
+		lines = append(lines, detailLabelStyle.Render("User")+detailValueStyle.Render(info.User))
+	}
+
+	// Memory
+	if info.MemoryKB > 0 {
+		var memStr string
+		if info.MemoryKB > 1024 {
+			memStr = fmt.Sprintf("%d MB", info.MemoryKB/1024)
+		} else {
+			memStr = fmt.Sprintf("%d KB", info.MemoryKB)
+		}
+		lines = append(lines, detailLabelStyle.Render("Memory")+detailValueStyle.Render(memStr))
+	}
+
+	// Uptime
+	if uptime := info.Uptime(); uptime > 0 {
+		lines = append(lines, detailLabelStyle.Render("Uptime")+detailValueStyle.Render(formatDuration(uptime)))
+	}
+
+	// Children
+	if len(info.Children) > 0 {
+		lines = append(lines, detailLabelStyle.Render("Children")+detailValueStyle.Render(strconv.Itoa(len(info.Children))))
+	}
+
+	// Kill strategy
+	strategy := kill.RecommendedStrategy(item.context)
+	action := kill.Action{
+		Strategy: strategy,
+		Context:  item.context,
+		Force:    m.force,
+	}
+	desc := kill.Describe(action)
+	lines = append(lines, detailLabelStyle.Render("Action")+strategyStyle.Render(desc))
+
+	// Warnings
+	var warnings []string
+	if info.IsPrivileged() {
+		warnings = append(warnings, "needs sudo")
+	}
+	if len(info.Children) > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d children affected", len(info.Children)))
+	}
+	if m.force {
+		warnings = append(warnings, "FORCE mode")
+	}
+	if len(warnings) > 0 {
+		lines = append(lines, detailLabelStyle.Render("Warning")+warningStyle.Render(strings.Join(warnings, ", ")))
+	}
+
+	// Tags
 	var tags []string
 	if item.context.IsContainerized() {
 		name := item.context.Container.Name
 		if name == "" {
 			name = container.ShortID(item.context.Container.ID)
 		}
-		tag := tagContainerStyle.Render(fmt.Sprintf("%s:%s", item.context.Container.Runtime, name))
-		tags = append(tags, tag)
+		tags = append(tags, tagContainerStyle.Render(fmt.Sprintf("%s:%s", item.context.Container.Runtime, name)))
 	}
 	if item.context.IsSystemdManaged() {
-		tag := tagSystemdStyle.Render(item.context.SystemdUnit)
-		tags = append(tags, tag)
+		tags = append(tags, tagSystemdStyle.Render(item.context.SystemdUnit))
 	}
-
-	line := fmt.Sprintf("%s %s %s  %s", cursor, portStr, pid, cmdStr)
+	if info.IsPrivileged() {
+		tags = append(tags, tagSudoStyle.Render("sudo"))
+	}
 	if len(tags) > 0 {
-		line += "  " + strings.Join(tags, " ")
+		lines = append(lines, detailLabelStyle.Render("")+strings.Join(tags, " "))
 	}
 
-	// Second line with details
-	var details []string
-	if item.context.Info.User != "" {
-		details = append(details, fmt.Sprintf("user:%s", item.context.Info.User))
+	content := strings.Join(lines, "\n")
+	width := m.width
+	if width > 0 {
+		// Account for border (2 chars) and padding (2 chars)
+		return detailPanelStyle.Width(width - 4).Render(content)
 	}
-	if item.context.Info.MemoryKB > 0 {
-		mem := item.context.Info.MemoryKB
-		if mem > 1024 {
-			details = append(details, fmt.Sprintf("mem:%dMB", mem/1024))
-		} else {
-			details = append(details, fmt.Sprintf("mem:%dKB", mem))
-		}
-	}
-	if uptime := item.context.Info.Uptime(); uptime > 0 {
-		details = append(details, fmt.Sprintf("up:%s", formatDuration(uptime)))
-	}
-	if len(item.context.Info.Children) > 0 {
-		details = append(details, fmt.Sprintf("children:%d", len(item.context.Info.Children)))
-	}
-	if item.context.Info.IsPrivileged() {
-		details = append(details, "needs sudo")
-	}
-
-	if len(details) > 0 {
-		detailLine := lipgloss.NewStyle().
-			PaddingLeft(cmdOffset).
-			Foreground(subtle).
-			Render(strings.Join(details, " • "))
-		line += "\n" + detailLine
-	}
-
-	return line
+	return detailPanelStyle.Render(content)
 }
 
-func (m Model) viewConfirm() string {
-	var b strings.Builder
-
+// buildConfirmPrompt renders the inline confirm prompt.
+func (m Model) buildConfirmPrompt() string {
+	if m.cursor >= len(m.items) {
+		return ""
+	}
 	item := m.items[m.cursor]
 	strategy := kill.RecommendedStrategy(item.context)
 	action := kill.Action{
@@ -367,39 +494,21 @@ func (m Model) viewConfirm() string {
 	}
 	desc := kill.Describe(action)
 
-	b.WriteString("\n")
-	b.WriteString(confirmStyle.Render(fmt.Sprintf("  Kill? %s", desc)))
-	b.WriteString("\n\n")
-
-	// Show what we're about to kill
-	b.WriteString(itemStyle.Render(m.renderItem(m.cursor, item)))
-	b.WriteString("\n\n")
+	var lines []string
+	lines = append(lines, confirmPromptStyle.Render("Kill? ")+confirmDescStyle.Render(desc+" [y/n]"))
 
 	if len(item.context.Info.Children) > 0 {
-		b.WriteString(itemStyle.Render(
-			errorStyle.Render(fmt.Sprintf("  Warning: %d child processes will also be affected", len(item.context.Info.Children))),
+		lines = append(lines, warningStyle.Render(
+			fmt.Sprintf("Warning: %d child processes will be affected", len(item.context.Info.Children)),
 		))
-		b.WriteString("\n\n")
 	}
 
-	b.WriteString(helpStyle.Render("  y/enter confirm • n/esc cancel"))
-	b.WriteString("\n")
-
-	return b.String()
-}
-
-func (m Model) viewResult() string {
-	var b strings.Builder
-	b.WriteString("\n")
-	if m.isError {
-		b.WriteString(errorStyle.Render("  " + m.message))
-	} else {
-		b.WriteString(successStyle.Render("  " + m.message))
+	content := strings.Join(lines, "\n")
+	width := m.width
+	if width > 0 {
+		return confirmPanelStyle.Width(width - 4).Render(content)
 	}
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("  C-r retry • C-g/enter quit"))
-	b.WriteString("\n")
-	return b.String()
+	return confirmPanelStyle.Render(content)
 }
 
 func formatDuration(d time.Duration) string {
