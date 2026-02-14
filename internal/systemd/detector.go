@@ -25,8 +25,11 @@ func detectFromCgroup(pid int) string {
 	if err != nil {
 		return ""
 	}
+	return parseCgroupUnit(string(data))
+}
 
-	for _, line := range strings.Split(string(data), "\n") {
+func parseCgroupUnit(content string) string {
+	for _, line := range strings.Split(content, "\n") {
 		// Format: hierarchy-ID:controller-list:cgroup-path
 		parts := strings.SplitN(line, ":", 3)
 		if len(parts) < 3 {
@@ -34,26 +37,38 @@ func detectFromCgroup(pid int) string {
 		}
 		cgroupPath := parts[2]
 
-		// Look for .service in the path
-		// e.g., /system.slice/nginx.service
-		// e.g., /system.slice/docker.service
 		segments := strings.Split(cgroupPath, "/")
 		for _, seg := range segments {
-			if strings.HasSuffix(seg, ".service") {
-				// Skip generic/infrastructure services
-			if seg == "docker.service" || seg == "podman.service" || seg == "containerd.service" {
+			if !strings.HasSuffix(seg, ".service") {
 				continue
 			}
-			// Skip user session slices (user@1000.service etc.)
-			if strings.HasPrefix(seg, "user@") {
+			if isInfrastructureUnit(seg) {
 				continue
 			}
-				return seg
-			}
+			return seg
 		}
 	}
-
 	return ""
+}
+
+// isInfrastructureUnit returns true for systemd units that should never be stopped
+// by zap because they manage user sessions or container infrastructure.
+func isInfrastructureUnit(unit string) bool {
+	// User session managers (user@1000.service etc.)
+	if strings.HasPrefix(unit, "user@") {
+		return true
+	}
+	// Container runtime services
+	switch unit {
+	case "docker.service", "podman.service", "containerd.service":
+		return true
+	}
+	// Display managers and session services
+	switch unit {
+	case "gdm.service", "sddm.service", "lightdm.service", "display-manager.service":
+		return true
+	}
+	return false
 }
 
 func detectFromSystemctl(pid int) string {
@@ -72,12 +87,33 @@ func detectFromSystemctl(pid int) string {
 		if strings.Contains(line, ".service") {
 			parts := strings.Fields(line)
 			if len(parts) > 0 && strings.HasSuffix(parts[0], ".service") {
-				return parts[0]
+				unit := parts[0]
+				if isInfrastructureUnit(unit) {
+					continue
+				}
+				if !isMainPIDOfUnit(pid, unit) {
+					continue
+				}
+				return unit
 			}
 		}
 	}
 
 	return ""
+}
+
+// isMainPIDOfUnit checks whether the given PID is the main process of a systemd unit,
+// not just a descendant running inside its cgroup.
+func isMainPIDOfUnit(pid int, unit string) bool {
+	cmd := exec.Command("systemctl", "show", "--property=MainPID", unit)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	// Output is like "MainPID=12345"
+	s := strings.TrimSpace(string(out))
+	mainPID := strings.TrimPrefix(s, "MainPID=")
+	return mainPID == strconv.Itoa(pid)
 }
 
 // Stop stops a systemd service.
