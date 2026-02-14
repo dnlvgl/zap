@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/dnl/zap/internal/container"
+	"github.com/dnl/zap/internal/kill"
 	"github.com/dnl/zap/internal/port"
 	"github.com/dnl/zap/internal/process"
 )
@@ -80,6 +82,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	hasError := false
 	for _, arg := range opts.ports {
 		q, err := port.Parse(arg)
 		if err != nil {
@@ -95,35 +98,77 @@ func main() {
 
 		if len(listeners) == 0 {
 			fmt.Fprintf(os.Stderr, "no processes found listening on %s\n", arg)
-			os.Exit(1)
+			hasError = true
+			continue
 		}
 
+		// Deduplicate by PID (a process may listen on multiple matched ports)
+		seen := make(map[int]bool)
 		for _, l := range listeners {
-			info, err := process.Gather(l.PID)
+			if seen[l.PID] {
+				continue
+			}
+			seen[l.PID] = true
+
+			ctx, err := process.GatherContext(l.PID)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not get info for PID %d: %v\n", l.PID, err)
 				continue
 			}
 
+			strategy := kill.RecommendedStrategy(ctx)
+			action := kill.Action{
+				Strategy: strategy,
+				Context:  ctx,
+				Force:    opts.force,
+			}
+
+			desc := kill.Describe(action)
+			contextInfo := formatContext(ctx, l)
+
 			if opts.dryRun {
-				fmt.Printf("[dry-run] would kill PID %d (%s) on port %d/%s\n",
-					info.PID, info.Command, l.Port, l.Protocol)
-				if len(info.Children) > 0 {
-					fmt.Printf("  child PIDs: %v\n", info.Children)
+				fmt.Printf("[dry-run] %s%s\n", desc, contextInfo)
+				if len(ctx.Info.Children) > 0 {
+					fmt.Printf("  child PIDs: %v\n", ctx.Info.Children)
 				}
 				continue
 			}
 
-			sig := "SIGTERM"
-			if opts.force {
-				sig = "SIGKILL"
+			fmt.Printf("%s%s\n", desc, contextInfo)
+			if err := kill.Execute(action); err != nil {
+				fmt.Fprintf(os.Stderr, "  error: %v\n", err)
+				hasError = true
 			}
-			fmt.Printf("killing PID %d (%s) on port %d/%s with %s\n",
-				info.PID, info.Command, l.Port, l.Protocol, sig)
-
-			_ = opts.force // TODO: use actual signal in kill phase
 		}
 	}
+
+	if hasError {
+		os.Exit(1)
+	}
+}
+
+func formatContext(ctx process.Context, l port.Listener) string {
+	parts := []string{
+		fmt.Sprintf(" (PID %d, port %d/%s", ctx.Info.PID, l.Port, l.Protocol),
+	}
+	if ctx.Info.Command != "" {
+		cmd := ctx.Info.Command
+		if len(cmd) > 40 {
+			cmd = cmd[:37] + "..."
+		}
+		parts = append(parts, fmt.Sprintf(", %s", cmd))
+	}
+	if ctx.IsContainerized() {
+		name := ctx.Container.Name
+		if name == "" {
+			name = container.ShortID(ctx.Container.ID)
+		}
+		parts = append(parts, fmt.Sprintf(", %s container %s", ctx.Container.Runtime, name))
+	}
+	if ctx.IsSystemdManaged() {
+		parts = append(parts, fmt.Sprintf(", systemd %s", ctx.SystemdUnit))
+	}
+	return strings.Join(parts, "") + ")"
 }
 
 func printListeners(listeners []port.Listener) {
