@@ -120,5 +120,9 @@ func executeSignal(action Action) error {
 	if action.Force {
 		sig = syscall.SIGKILL
 	}
-	return action.Context.Info.Signal(sig)
+	err := action.Context.Info.Signal(sig)
+	if err != nil && action.Context.Info.IsPrivileged() {
+		return fmt.Errorf("%w (process owned by %s, try running with sudo)", err, action.Context.Info.User)
+	}
+	return err
 }
