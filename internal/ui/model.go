@@ -24,6 +24,10 @@ const (
 	stateResult
 )
 
+const autoRefreshInterval = 2 * time.Second
+
+type tickMsg time.Time
+
 type processItem struct {
 	listener port.Listener
 	context  process.Context
@@ -31,16 +35,17 @@ type processItem struct {
 
 // Model is the Bubble Tea model for the zap TUI.
 type Model struct {
-	state    state
-	query    *port.Query // nil means show all ports
-	items    []processItem
-	cursor   int
-	force    bool
-	message  string
-	isError  bool
-	width    int
-	height   int
-	quitting bool
+	state       state
+	query       *port.Query // nil means show all ports
+	items       []processItem
+	cursor      int
+	selectedPID int // PID of selected row — used to restore cursor after refresh
+	force       bool
+	message     string
+	isError     bool
+	width       int
+	height      int
+	quitting    bool
 }
 
 // New creates a new TUI model.
@@ -65,6 +70,12 @@ type killResultMsg struct {
 }
 
 // Commands
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(autoRefreshInterval, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
 
 func loadProcesses(query *port.Query) tea.Cmd {
 	return func() tea.Msg {
@@ -119,7 +130,7 @@ func executeKill(item processItem, force bool) tea.Cmd {
 
 // Init starts the initial loading.
 func (m Model) Init() tea.Cmd {
-	return loadProcesses(m.query)
+	return tea.Batch(loadProcesses(m.query), tickCmd())
 }
 
 // Update handles events.
@@ -133,7 +144,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 
+	case tickMsg:
+		if m.state == stateList {
+			if m.cursor < len(m.items) {
+				m.selectedPID = m.items[m.cursor].context.Info.PID
+			}
+			return m, tea.Batch(loadProcesses(m.query), tickCmd())
+		}
+		return m, tickCmd()
+
 	case loadedMsg:
+		// Don't disrupt an active confirm dialog
+		if m.state == stateConfirm {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.state = stateResult
 			m.message = msg.err.Error()
@@ -148,6 +172,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.items = msg.items
 		m.state = stateList
+		// Restore cursor by PID; fall back to first item
+		if m.selectedPID != 0 {
+			m.cursor = 0
+			for i, item := range m.items {
+				if item.context.Info.PID == m.selectedPID {
+					m.cursor = i
+					break
+				}
+			}
+		}
+		if m.cursor >= len(m.items) {
+			m.cursor = len(m.items) - 1
+		}
+		// Keep selectedPID in sync with actual cursor
+		if m.cursor < len(m.items) {
+			m.selectedPID = m.items[m.cursor].context.Info.PID
+		}
 		return m, nil
 
 	case killResultMsg:
@@ -176,13 +217,22 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.cursor > 0 {
 				m.cursor--
 			}
+			if m.cursor < len(m.items) {
+				m.selectedPID = m.items[m.cursor].context.Info.PID
+			}
 		case "down", "ctrl+n":
 			if m.cursor < len(m.items)-1 {
 				m.cursor++
 			}
+			if m.cursor < len(m.items) {
+				m.selectedPID = m.items[m.cursor].context.Info.PID
+			}
 		case "enter", " ":
 			m.state = stateConfirm
 		case "ctrl+r":
+			if m.cursor < len(m.items) {
+				m.selectedPID = m.items[m.cursor].context.Info.PID
+			}
 			m.state = stateLoading
 			return m, loadProcesses(m.query)
 		}
@@ -303,7 +353,7 @@ func (m Model) buildTitle() string {
 
 // buildHelp returns the help line.
 func (m Model) buildHelp() string {
-	help := "C-p/C-n navigate • enter select • C-r refresh • C-g quit"
+	help := "C-p/C-n navigate • enter select • C-r refresh • auto • C-g quit"
 	if m.force {
 		help += " • FORCE mode"
 	}
