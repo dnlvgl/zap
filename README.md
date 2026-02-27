@@ -2,7 +2,7 @@
 
 Too many dev servers running and ports colliding? Can't remember the `netstat` incantation to figure out what's hogging port 3000?
 
-zap gives you a TUI to find processes by port and kill them — with proper handling for containers (Podman/Docker) and systemd services.
+zap gives you a live TUI to find processes by port and kill them — with proper handling for containers (Podman/Docker) and systemd services. The list auto-refreshes every 2 seconds so you can watch a service come up, confirm a kill took effect, or spot new port conflicts without pressing a key.
 
 ![zap screenshot](screenshots/zap-screenshot.png)
 
@@ -39,7 +39,6 @@ zap :3000 --force
 # Dry run (non-interactive, shows what would be killed)
 zap :3000 --dry-run
 ```
-
 
 ## Kill strategies
 
