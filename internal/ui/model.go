@@ -46,6 +46,21 @@ type Model struct {
 	width       int
 	height      int
 	quitting    bool
+	search      string
+}
+
+// visibleItems returns the filtered subset of items matching m.search.
+func (m Model) visibleItems() []processItem {
+	if m.search == "" {
+		return m.items
+	}
+	var out []processItem
+	for _, item := range m.items {
+		if strings.Contains(strconv.Itoa(item.listener.Port), m.search) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // New creates a new TUI model.
@@ -146,8 +161,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		if m.state == stateList {
-			if m.cursor < len(m.items) {
-				m.selectedPID = m.items[m.cursor].context.Info.PID
+			visible := m.visibleItems()
+			if m.cursor < len(visible) {
+				m.selectedPID = visible[m.cursor].context.Info.PID
 			}
 			return m, tea.Batch(loadProcesses(m.query), tickCmd())
 		}
@@ -172,22 +188,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.items = msg.items
 		m.state = stateList
-		// Restore cursor by PID; fall back to first item
+		// Restore cursor by PID within visible (filtered) items; fall back to first
+		visible := m.visibleItems()
 		if m.selectedPID != 0 {
 			m.cursor = 0
-			for i, item := range m.items {
+			for i, item := range visible {
 				if item.context.Info.PID == m.selectedPID {
 					m.cursor = i
 					break
 				}
 			}
 		}
-		if m.cursor >= len(m.items) {
-			m.cursor = len(m.items) - 1
+		if m.cursor >= len(visible) {
+			m.cursor = max(0, len(visible)-1)
 		}
 		// Keep selectedPID in sync with actual cursor
-		if m.cursor < len(m.items) {
-			m.selectedPID = m.items[m.cursor].context.Info.PID
+		if m.cursor < len(visible) {
+			m.selectedPID = visible[m.cursor].context.Info.PID
 		}
 		return m, nil
 
@@ -210,28 +227,49 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateList:
 		switch msg.String() {
-		case "ctrl+g", "ctrl+c", "esc":
+		case "ctrl+g", "ctrl+c":
 			m.quitting = true
 			return m, tea.Quit
+		case "esc":
+			if m.search != "" {
+				m.search = ""
+				m.cursor = 0
+			} else {
+				m.quitting = true
+				return m, tea.Quit
+			}
+		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			m.search += msg.String()
+			m.cursor = 0
+		case "backspace":
+			if len(m.search) > 0 {
+				m.search = m.search[:len(m.search)-1]
+				m.cursor = 0
+			}
 		case "up", "ctrl+p":
+			visible := m.visibleItems()
 			if m.cursor > 0 {
 				m.cursor--
 			}
-			if m.cursor < len(m.items) {
-				m.selectedPID = m.items[m.cursor].context.Info.PID
+			if m.cursor < len(visible) {
+				m.selectedPID = visible[m.cursor].context.Info.PID
 			}
 		case "down", "ctrl+n":
-			if m.cursor < len(m.items)-1 {
+			visible := m.visibleItems()
+			if m.cursor < len(visible)-1 {
 				m.cursor++
 			}
-			if m.cursor < len(m.items) {
-				m.selectedPID = m.items[m.cursor].context.Info.PID
+			if m.cursor < len(visible) {
+				m.selectedPID = visible[m.cursor].context.Info.PID
 			}
 		case "enter", " ":
-			m.state = stateConfirm
+			if m.cursor < len(m.visibleItems()) {
+				m.state = stateConfirm
+			}
 		case "ctrl+r":
-			if m.cursor < len(m.items) {
-				m.selectedPID = m.items[m.cursor].context.Info.PID
+			visible := m.visibleItems()
+			if m.cursor < len(visible) {
+				m.selectedPID = visible[m.cursor].context.Info.PID
 			}
 			m.state = stateLoading
 			return m, loadProcesses(m.query)
@@ -240,7 +278,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case stateConfirm:
 		switch msg.String() {
 		case "y", "Y", "enter":
-			item := m.items[m.cursor]
+			item := m.visibleItems()[m.cursor]
 			m.state = stateLoading
 			m.message = "Killing..."
 			return m, executeKill(item, m.force)
@@ -295,12 +333,14 @@ func (m Model) viewLoading() string {
 
 func (m Model) viewList() string {
 	title := m.buildTitle()
+	search := m.buildSearchBar()
 	tbl := m.buildTable()
 	detail := m.buildDetailPanel()
 	help := m.buildHelp()
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(title),
+		search,
 		tbl,
 		detail,
 		help,
@@ -310,12 +350,14 @@ func (m Model) viewList() string {
 
 func (m Model) viewConfirm() string {
 	title := m.buildTitle()
+	search := m.buildSearchBar()
 	tbl := m.buildTable()
 	confirm := m.buildConfirmPrompt()
 	help := helpStyle.Render("y/enter confirm • n/esc cancel")
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		titleStyle.Render(title),
+		search,
 		tbl,
 		confirm,
 		help,
@@ -351,6 +393,15 @@ func (m Model) buildTitle() string {
 	return "Listening Processes"
 }
 
+// buildSearchBar renders a persistent filter input line.
+func (m Model) buildSearchBar() string {
+	prompt := searchPromptStyle.Render("/ ")
+	if m.search == "" {
+		return prompt + searchPlaceholderStyle.Render("type digits to filter by port")
+	}
+	return prompt + searchStyle.Render(m.search+"█")
+}
+
 // buildHelp returns the help line.
 func (m Model) buildHelp() string {
 	help := "C-p/C-n navigate • enter select • C-r refresh • auto • C-g quit"
@@ -367,8 +418,9 @@ func (m Model) buildTable() string {
 		width = 80
 	}
 
-	rows := make([][]string, len(m.items))
-	for i, item := range m.items {
+	visible := m.visibleItems()
+	rows := make([][]string, len(visible))
+	for i, item := range visible {
 		rows[i] = m.buildRow(i, item, width)
 	}
 
@@ -443,10 +495,11 @@ func (m Model) buildRow(index int, item processItem, width int) []string {
 
 // buildDetailPanel renders the detail panel for the selected item.
 func (m Model) buildDetailPanel() string {
-	if m.cursor >= len(m.items) {
+	visible := m.visibleItems()
+	if m.cursor >= len(visible) {
 		return ""
 	}
-	item := m.items[m.cursor]
+	item := visible[m.cursor]
 	info := item.context.Info
 
 	var lines []string
@@ -533,10 +586,11 @@ func (m Model) buildDetailPanel() string {
 
 // buildConfirmPrompt renders the inline confirm prompt.
 func (m Model) buildConfirmPrompt() string {
-	if m.cursor >= len(m.items) {
+	visible := m.visibleItems()
+	if m.cursor >= len(visible) {
 		return ""
 	}
-	item := m.items[m.cursor]
+	item := visible[m.cursor]
 	strategy := kill.RecommendedStrategy(item.context)
 	action := kill.Action{
 		Strategy: strategy,

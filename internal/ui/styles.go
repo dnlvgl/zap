@@ -101,4 +101,15 @@ var (
 	helpStyle = lipgloss.NewStyle().
 			Foreground(colorSubtle).
 			MarginTop(1)
+
+	searchStyle = lipgloss.NewStyle().
+			Foreground(colorAccent).
+			Bold(true)
+
+	searchPromptStyle = lipgloss.NewStyle().
+				Foreground(colorMuted)
+
+	searchPlaceholderStyle = lipgloss.NewStyle().
+				Foreground(colorMuted).
+				Italic(true)
 )
