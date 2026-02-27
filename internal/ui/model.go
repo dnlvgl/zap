@@ -411,6 +411,17 @@ func (m Model) buildHelp() string {
 	return helpStyle.Render(help)
 }
 
+// colWidths defines fixed column widths. Their sum plus 2 outer border chars
+// must equal the terminal width for the right border to appear correctly.
+// The library's MaxWidth clips at t.width when Width() is set; by omitting
+// Width() (t.width=0) MaxWidth becomes a no-op and the right border survives.
+const (
+	colWidthSel  = 2
+	colWidthPort = 12 // enough for ":65535/tcp"
+	colWidthPID  = 8  // enough for a 7-digit PID
+	colWidthOverhead = colWidthSel + colWidthPort + colWidthPID + 2 // 2 = outer borders
+)
+
 // buildTable constructs a lipgloss table from the process items.
 func (m Model) buildTable() string {
 	width := m.width
@@ -424,14 +435,17 @@ func (m Model) buildTable() string {
 		rows[i] = m.buildRow(i, item, width)
 	}
 
+	// No Width() call so t.width=0 → MaxWidth(0) is a no-op and the right
+	// border is never clipped. Column widths are fixed via tableStyleFunc so
+	// the table naturally renders at exactly m.width characters.
 	t := table.New().
 		Headers("", "PORT", "PID", "COMMAND").
 		Rows(rows...).
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(colorMuted)).
 		BorderHeader(true).
 		BorderColumn(false).
 		BorderRow(false).
-		Width(width).
 		StyleFunc(m.tableStyleFunc)
 
 	return t.Render()
@@ -439,33 +453,39 @@ func (m Model) buildTable() string {
 
 // tableStyleFunc returns the style for each cell based on row/col.
 func (m Model) tableStyleFunc(row, col int) lipgloss.Style {
-	if row == table.HeaderRow {
-		s := tableHeaderStyle
-		if col == 0 {
-			return s.Width(2)
+	var s lipgloss.Style
+	switch {
+	case row == table.HeaderRow:
+		s = tableHeaderStyle
+	case row == m.cursor:
+		s = tableSelectedStyle
+	default:
+		s = tableCellStyle
+		switch col {
+		case 1: // PORT
+			s = s.Foreground(colorAccent)
+		case 2: // PID
+			s = s.Foreground(colorYellow)
+		case 3: // COMMAND
+			s = s.Foreground(colorSubtle)
 		}
-		return s
 	}
 
-	if row == m.cursor {
-		s := tableSelectedStyle
-		if col == 0 {
-			return s.Width(2)
-		}
-		return s
-	}
-
-	s := tableCellStyle
-	if col == 0 {
-		return s.Width(2)
-	}
+	// Fixed widths per column. Their sum equals m.width - 2 (outer borders),
+	// so the table auto-detects the correct total and renders at m.width.
 	switch col {
-	case 1: // PORT
-		return s.Foreground(colorAccent)
-	case 2: // PID
-		return s.Foreground(colorYellow)
-	case 3: // COMMAND
-		return s.Foreground(colorSubtle)
+	case 0:
+		return s.Width(colWidthSel)
+	case 1:
+		return s.Width(colWidthPort)
+	case 2:
+		return s.Width(colWidthPID)
+	case 3:
+		cmdWidth := m.width - colWidthOverhead
+		if cmdWidth < 20 {
+			cmdWidth = 20
+		}
+		return s.Width(cmdWidth)
 	}
 	return s
 }
@@ -481,8 +501,7 @@ func (m Model) buildRow(index int, item processItem, width int) []string {
 	pidStr := strconv.Itoa(item.context.Info.PID)
 
 	cmd := item.context.Info.Command
-	// Reserve space for selector(2) + port(~12) + pid(~8) + borders/padding(~10)
-	maxCmd := width - 32
+	maxCmd := width - colWidthOverhead
 	if maxCmd < 20 {
 		maxCmd = 20
 	}
@@ -578,8 +597,7 @@ func (m Model) buildDetailPanel() string {
 	const detailPanelLines = 7
 	width := m.width
 	if width > 0 {
-		// Account for border (2 chars) and padding (2 chars)
-		return detailPanelStyle.Width(width - 4).Height(detailPanelLines).Render(content)
+		return detailPanelStyle.Width(width - 2).Height(detailPanelLines).Render(content)
 	}
 	return detailPanelStyle.Height(detailPanelLines).Render(content)
 }
@@ -611,7 +629,7 @@ func (m Model) buildConfirmPrompt() string {
 	content := strings.Join(lines, "\n")
 	width := m.width
 	if width > 0 {
-		return confirmPanelStyle.Width(width - 4).Render(content)
+		return confirmPanelStyle.Width(width - 2).Render(content)
 	}
 	return confirmPanelStyle.Render(content)
 }
