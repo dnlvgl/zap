@@ -9,10 +9,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-	"github.com/dnl/zap/internal/container"
-	"github.com/dnl/zap/internal/kill"
-	"github.com/dnl/zap/internal/port"
-	"github.com/dnl/zap/internal/process"
+	"github.com/dnlvgl/zap/internal/container"
+	"github.com/dnlvgl/zap/internal/kill"
+	"github.com/dnlvgl/zap/internal/port"
+	"github.com/dnlvgl/zap/internal/process"
 )
 
 type state int

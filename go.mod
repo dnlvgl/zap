@@ -1,4 +1,4 @@
-module github.com/dnl/zap
+module github.com/dnlvgl/zap
 
 go 1.25.7
 

@@ -1,0 +1,29 @@
+version: 2
+project_name: zap
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: zap
+    main: ./cmd/zap/
+    binary: zap
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+release:
+  github:
+    owner: dnlvgl
+    name: zap
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ['^docs:', '^test:', Merge pull request, Merge branch]

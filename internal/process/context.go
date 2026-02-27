@@ -1,8 +1,8 @@
 package process
 
 import (
-	"github.com/dnl/zap/internal/container"
-	"github.com/dnl/zap/internal/systemd"
+	"github.com/dnlvgl/zap/internal/container"
+	"github.com/dnlvgl/zap/internal/systemd"
 )
 
 // Context combines process info with container and systemd detection.

@@ -3,8 +3,8 @@ package kill
 import (
 	"testing"
 
-	"github.com/dnl/zap/internal/container"
-	"github.com/dnl/zap/internal/process"
+	"github.com/dnlvgl/zap/internal/container"
+	"github.com/dnlvgl/zap/internal/process"
 )
 
 func TestRecommendedStrategy(t *testing.T) {

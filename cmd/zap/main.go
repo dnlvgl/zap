@@ -6,12 +6,14 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dnl/zap/internal/container"
-	"github.com/dnl/zap/internal/kill"
-	"github.com/dnl/zap/internal/port"
-	"github.com/dnl/zap/internal/process"
-	"github.com/dnl/zap/internal/ui"
+	"github.com/dnlvgl/zap/internal/container"
+	"github.com/dnlvgl/zap/internal/kill"
+	"github.com/dnlvgl/zap/internal/port"
+	"github.com/dnlvgl/zap/internal/process"
+	"github.com/dnlvgl/zap/internal/ui"
 )
+
+var version = "dev" // overridden at build time via -ldflags
 
 type options struct {
 	force   bool
@@ -65,7 +67,7 @@ func main() {
 	opts := parseArgs(os.Args[1:])
 
 	if opts.version {
-		fmt.Println("zap v0.1.0")
+		fmt.Println("zap " + version)
 		os.Exit(0)
 	}
 

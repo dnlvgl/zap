@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"syscall"
 
-	"github.com/dnl/zap/internal/container"
-	"github.com/dnl/zap/internal/process"
-	"github.com/dnl/zap/internal/systemd"
+	"github.com/dnlvgl/zap/internal/container"
+	"github.com/dnlvgl/zap/internal/process"
+	"github.com/dnlvgl/zap/internal/systemd"
 )
 
 // Strategy describes how to stop a process.
