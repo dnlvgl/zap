@@ -472,12 +472,13 @@ func (m Model) buildDetailPanel() string {
 	}
 
 	content := strings.Join(lines, "\n")
+	const detailPanelLines = 7
 	width := m.width
 	if width > 0 {
 		// Account for border (2 chars) and padding (2 chars)
-		return detailPanelStyle.Width(width - 4).Render(content)
+		return detailPanelStyle.Width(width - 4).Height(detailPanelLines).Render(content)
 	}
-	return detailPanelStyle.Render(content)
+	return detailPanelStyle.Height(detailPanelLines).Render(content)
 }
 
 // buildConfirmPrompt renders the inline confirm prompt.
