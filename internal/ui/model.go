@@ -89,7 +89,7 @@ func loadProcesses(query *port.Query) tea.Cmd {
 			}
 			seen[l.PID] = true
 
-			ctx, err := process.GatherContext(l.PID)
+			ctx, err := process.GatherContext(l.PID, l.Port)
 			if err != nil {
 				continue
 			}

@@ -13,7 +13,7 @@ type Context struct {
 }
 
 // GatherContext collects full process context including container and systemd info.
-func GatherContext(pid int) (Context, error) {
+func GatherContext(pid, port int) (Context, error) {
 	info, err := Gather(pid)
 	if err != nil {
 		return Context{}, err
@@ -21,7 +21,7 @@ func GatherContext(pid int) (Context, error) {
 
 	ctx := Context{
 		Info:        info,
-		Container:   container.Detect(pid),
+		Container:   container.Detect(pid, port),
 		SystemdUnit: systemd.Detect(pid),
 	}
 

@@ -129,7 +129,7 @@ func runDryRun(opts options) {
 			}
 			seen[l.PID] = true
 
-			ctx, err := process.GatherContext(l.PID)
+			ctx, err := process.GatherContext(l.PID, l.Port)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not get info for PID %d: %v\n", l.PID, err)
 				continue
