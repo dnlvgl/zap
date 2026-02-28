@@ -56,3 +56,12 @@ zap automatically picks the best way to stop a process:
 | `--dry-run` | `-n` | Show what would be killed (non-interactive) |
 | `--version` | `-v` | Print version |
 | `--help` | `-h` | Show help |
+
+## Releasing a new version
+
+Pushing a `v*` tag triggers the GitHub Actions release workflow, which uses GoReleaser to build and publish binaries.
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
