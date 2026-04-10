@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -31,10 +32,12 @@ func DetectAll() ([]Listener, error) {
 func detectFromProc(q Query) ([]Listener, error) {
 	inodeMap := make(map[uint64]socketInfo)
 
+	var readErr error
 	for _, proto := range []string{"tcp", "tcp6", "udp", "udp6"} {
 		path := filepath.Join("/proc/net", proto)
 		entries, err := parseProcNet(path)
 		if err != nil {
+			readErr = err
 			continue
 		}
 		for _, e := range entries {
@@ -56,6 +59,9 @@ func detectFromProc(q Query) ([]Listener, error) {
 	}
 
 	if len(inodeMap) == 0 {
+		if readErr != nil {
+			return nil, fmt.Errorf("could not read /proc/net: %w", readErr)
+		}
 		return nil, nil
 	}
 
@@ -135,12 +141,16 @@ func parseHexAddr(s string) (addr string, port int, err error) {
 		}
 		// /proc/net/tcp stores addresses in little-endian
 		addr = fmt.Sprintf("%d.%d.%d.%d", b[3], b[2], b[1], b[0])
-	case 32: // IPv6
-		if hexAddr == "00000000000000000000000000000000" {
-			addr = "::"
-		} else {
-			addr = "::" // simplified
+	case 32: // IPv6 — four little-endian 32-bit words
+		b, err := hex.DecodeString(hexAddr)
+		if err != nil {
+			return "", 0, err
 		}
+		// /proc/net/tcp6 stores each 32-bit word in host (little-endian) byte order
+		for i := 0; i < 16; i += 4 {
+			b[i], b[i+1], b[i+2], b[i+3] = b[i+3], b[i+2], b[i+1], b[i]
+		}
+		addr = net.IP(b).String()
 	default:
 		addr = hexAddr
 	}
