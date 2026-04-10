@@ -65,3 +65,7 @@ Pushing a `v*` tag triggers the GitHub Actions release workflow, which uses GoRe
 git tag v0.2.0
 git push origin v0.2.0
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
