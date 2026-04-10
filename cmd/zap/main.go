@@ -18,6 +18,7 @@ var version = "dev" // overridden at build time via -ldflags
 type options struct {
 	force   bool
 	dryRun  bool
+	verbose bool
 	version bool
 	ports   []string
 }
@@ -30,6 +31,8 @@ func parseArgs(args []string) options {
 			opts.force = true
 		case "--dry-run", "-n":
 			opts.dryRun = true
+		case "--verbose", "-V":
+			opts.verbose = true
 		case "--version", "-v":
 			opts.version = true
 		case "--help", "-h":
@@ -58,6 +61,7 @@ Arguments:
 Flags:
   -f, --force     Use SIGKILL instead of SIGTERM
   -n, --dry-run   Show what would be killed without doing it
+  -V, --verbose   Print extra detection details (strategy, container, unit)
   -v, --version   Print version and exit
   -h, --help      Show this help
 `)
@@ -149,6 +153,18 @@ func runDryRun(opts options) {
 			fmt.Printf("[dry-run] %s%s\n", desc, contextInfo)
 			if len(ctx.Info.Children) > 0 {
 				fmt.Printf("  child PIDs: %v\n", ctx.Info.Children)
+			}
+			if opts.verbose {
+				fmt.Printf("  strategy: %s\n", strategy)
+				if ctx.IsContainerized() {
+					fmt.Printf("  container ID: %s (runtime: %s)\n", ctx.Container.ID, ctx.Container.Runtime)
+				}
+				if ctx.IsSystemdManaged() {
+					fmt.Printf("  systemd unit: %s\n", ctx.SystemdUnit)
+				}
+				if ctx.Info.User != "" {
+					fmt.Printf("  user: %s\n", ctx.Info.User)
+				}
 			}
 		}
 	}
