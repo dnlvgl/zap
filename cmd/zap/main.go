@@ -78,18 +78,17 @@ func main() {
 	}
 
 	// Interactive TUI mode
-	var query *port.Query
-	if len(opts.ports) > 0 {
-		// For now, use the first port argument for TUI
-		q, err := port.Parse(opts.ports[0])
+	var queries []port.Query
+	for _, arg := range opts.ports {
+		q, err := port.Parse(arg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
-		query = &q
+		queries = append(queries, q)
 	}
 
-	model := ui.New(query, opts.force)
+	model := ui.New(queries, opts.force)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

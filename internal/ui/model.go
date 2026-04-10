@@ -36,7 +36,7 @@ type processItem struct {
 // Model is the Bubble Tea model for the zap TUI.
 type Model struct {
 	state       state
-	query       *port.Query // nil means show all ports
+	queries     []port.Query // nil/empty means show all ports
 	items       []processItem
 	cursor      int
 	selectedPID int // PID of selected row — used to restore cursor after refresh
@@ -63,12 +63,12 @@ func (m Model) visibleItems() []processItem {
 	return out
 }
 
-// New creates a new TUI model.
-func New(query *port.Query, force bool) Model {
+// New creates a new TUI model. queries is nil/empty to show all ports.
+func New(queries []port.Query, force bool) Model {
 	return Model{
-		state: stateLoading,
-		query: query,
-		force: force,
+		state:   stateLoading,
+		queries: queries,
+		force:   force,
 	}
 }
 
@@ -92,24 +92,30 @@ func tickCmd() tea.Cmd {
 	})
 }
 
-func loadProcesses(query *port.Query) tea.Cmd {
+func loadProcesses(queries []port.Query) tea.Cmd {
 	return func() tea.Msg {
-		var listeners []port.Listener
+		var allListeners []port.Listener
 		var err error
 
-		if query == nil {
-			listeners, err = port.DetectAll()
+		if len(queries) == 0 {
+			allListeners, err = port.DetectAll()
+			if err != nil {
+				return loadedMsg{err: err}
+			}
 		} else {
-			listeners, err = port.Detect(*query)
-		}
-		if err != nil {
-			return loadedMsg{err: err}
+			for _, q := range queries {
+				listeners, e := port.Detect(q)
+				if e != nil {
+					return loadedMsg{err: e}
+				}
+				allListeners = append(allListeners, listeners...)
+			}
 		}
 
 		// Deduplicate by PID and gather context
 		seen := make(map[int]bool)
 		var items []processItem
-		for _, l := range listeners {
+		for _, l := range allListeners {
 			if seen[l.PID] {
 				continue
 			}
@@ -145,7 +151,7 @@ func executeKill(item processItem, force bool) tea.Cmd {
 
 // Init starts the initial loading.
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(loadProcesses(m.query), tickCmd())
+	return tea.Batch(loadProcesses(m.queries), tickCmd())
 }
 
 // Update handles events.
@@ -165,7 +171,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursor < len(visible) {
 				m.selectedPID = visible[m.cursor].context.Info.PID
 			}
-			return m, tea.Batch(loadProcesses(m.query), tickCmd())
+			return m, tea.Batch(loadProcesses(m.queries), tickCmd())
 		}
 		return m, tickCmd()
 
@@ -272,7 +278,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.selectedPID = visible[m.cursor].context.Info.PID
 			}
 			m.state = stateLoading
-			return m, loadProcesses(m.query)
+			return m, loadProcesses(m.queries)
 		}
 
 	case stateConfirm:
@@ -297,7 +303,7 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+b":
 			m.state = stateLoading
 			m.cursor = 0
-			return m, loadProcesses(m.query)
+			return m, loadProcesses(m.queries)
 		}
 	}
 
@@ -382,15 +388,28 @@ func (m Model) viewResult() string {
 	)
 }
 
-// buildTitle returns the title string based on query.
+// buildTitle returns the title string based on queries.
 func (m Model) buildTitle() string {
-	if m.query != nil {
-		if m.query.IsSinglePort() {
-			return fmt.Sprintf("Processes on port %d", m.query.StartPort)
+	switch len(m.queries) {
+	case 0:
+		return "Listening Processes"
+	case 1:
+		q := m.queries[0]
+		if q.IsSinglePort() {
+			return fmt.Sprintf("Processes on port %d", q.StartPort)
 		}
-		return fmt.Sprintf("Processes on ports %d-%d", m.query.StartPort, m.query.EndPort)
+		return fmt.Sprintf("Processes on ports %d-%d", q.StartPort, q.EndPort)
+	default:
+		parts := make([]string, len(m.queries))
+		for i, q := range m.queries {
+			if q.IsSinglePort() {
+				parts[i] = strconv.Itoa(q.StartPort)
+			} else {
+				parts[i] = fmt.Sprintf("%d-%d", q.StartPort, q.EndPort)
+			}
+		}
+		return "Processes on ports " + strings.Join(parts, ", ")
 	}
-	return "Listening Processes"
 }
 
 // buildSearchBar renders a persistent filter input line.
