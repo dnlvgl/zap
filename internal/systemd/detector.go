@@ -1,12 +1,17 @@
 package systemd
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const detectionTimeout = 5 * time.Second
+const operationTimeout = 30 * time.Second
 
 // Detect checks if a process is managed by systemd and returns the unit name.
 // Returns empty string if not a systemd-managed process.
@@ -72,7 +77,9 @@ func isInfrastructureUnit(unit string) bool {
 }
 
 func detectFromSystemctl(pid int) string {
-	cmd := exec.Command("systemctl", "status", strconv.Itoa(pid))
+	ctx, cancel := context.WithTimeout(context.Background(), detectionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "status", strconv.Itoa(pid))
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
@@ -105,7 +112,9 @@ func detectFromSystemctl(pid int) string {
 // isMainPIDOfUnit checks whether the given PID is the main process of a systemd unit,
 // not just a descendant running inside its cgroup.
 func isMainPIDOfUnit(pid int, unit string) bool {
-	cmd := exec.Command("systemctl", "show", "--property=MainPID", unit)
+	ctx, cancel := context.WithTimeout(context.Background(), detectionTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "show", "--property=MainPID", unit)
 	out, err := cmd.Output()
 	if err != nil {
 		return false
@@ -118,7 +127,9 @@ func isMainPIDOfUnit(pid int, unit string) bool {
 
 // Stop stops a systemd service.
 func Stop(unit string) error {
-	cmd := exec.Command("systemctl", "stop", unit)
+	ctx, cancel := context.WithTimeout(context.Background(), operationTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "systemctl", "stop", unit)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
